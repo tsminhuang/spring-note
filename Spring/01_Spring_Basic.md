@@ -295,3 +295,435 @@ foo.email=def@bbb.com
         <property name="email" value="${foo.email}"/>
     </bean>
 ```
+
+## Spring Bean Scopes
+
++ singleton: create a single instace in one container
++ prototype : create new bean for each container request
++ request: HTTP web request
++ session: HTTP web session
++ global-session: gobal HTPP web session
+
+### Singleton
+
++ Singleton
+  + defaul scope
+  + cached in memory
+  + share reference to the same bean
+
+```xml
+    <bean id="myCoach"
+          class="note.spring.springdemo.service.impl.TrackCoach"
+          scope="singleton">
+
+        <!-- set up constructor injection -->
+        <constructor-arg ref="myFortune"/>
+    </bean>
+
+    <bean id="myCodeCoach"
+          class="note.spring.springdemo.service.impl.CodeCoach"
+          scope="prototype">
+
+        <!-- set up constructor injection -->
+        <constructor-arg ref="myRandFortune"/>
+    </bean>
+```
+
+```java
+public class BeanScopeDemoApp {
+    public static void main(String[] argv) {
+        // load spring configuration config
+        ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext("beanScope-applicationContext.xml");
+
+        // singleton bean
+        Coach theCoach = context.getBean("myCoach", Coach.class);
+        Coach alphaCoach = context.getBean("myCoach", Coach.class);
+
+        boolean isSameCoach = (theCoach == alphaCoach);
+        System.out.println("singleton bean");
+        System.out.println("The coach is the same: " + isSameCoach);
+        System.out.println("the theCoach address: " + theCoach);
+        System.out.println("the alphaCoach address: " + alphaCoach);
+
+        // prototype bean
+        theCoach = context.getBean("myCodeCoach", Coach.class);
+        alphaCoach = context.getBean("myCodeCoach", Coach.class);
+        isSameCoach = (theCoach == alphaCoach);
+        System.out.println("prototype bean");
+        System.out.println("The coach is the same: " + isSameCoach);
+        System.out.println("the theCoach address: " + theCoach);
+        System.out.println("the alphaCoach address: " + alphaCoach);
+
+        // close the context
+        context.close();
+    }
+}
+```
+
+### Bean Life Cycle
+
+Container Start -> Bean creation -> Dependenies Injected -> Internal Spring Process -> Your Customer init Method
+
++ post construction:
+  + calling customize business logic
+  + setting up handles to resource (db, sockes, files etc)
+
+Container is shut donw -> Your Custom Destroy -> Stop
+
++ pre destroy:
+  + calling customize business logic
+  + clean up handles to resource (db, sockes, files etc)
+
++ can any access level (since it use reflection)
++ **must be no arg method**
++ can have return type but will not use in Spring
++ Spring did not full manage the lifecyce of prototype scope: **need to implement CustomBeanPostProcessor** and prototype scope bean need to implement **DisposableBean** interface
+
+```xml
+    <bean id="myCoach"
+          class="note.spring.springdemo.service.impl.TrackCoach"
+          init-method="MyInit"
+          destroy-method="MyCleanUp">
+
+        <!-- set up constructor injection -->
+        <constructor-arg ref="myFortune"/>
+    </bean>
+
+    <bean id="myCodeCoach"
+          class="note.spring.springdemo.service.impl.CodeCoach"
+          scope="prototype"
+          init-method="MyInit"
+          destroy-method="destroy">
+
+        <!-- set up constructor injection -->
+        <constructor-arg ref="myRandFortune"/>
+    </bean>
+```
+
+```java
+public class MyCustomBeanProcessor implements BeanPostProcessor, BeanFactoryAware, DisposableBean {
+
+    private BeanFactory beanFactory;
+
+    private final List<Object> prototypeBeans = new LinkedList<>();
+
+    @Override
+    public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
+
+        // after start up, keep track of the prototype scoped beans.
+        // we will need to know who they are for later destruction
+
+        if (beanFactory.isPrototype(beanName)) {
+            synchronized (prototypeBeans) {
+                prototypeBeans.add(bean);
+            }
+        }
+
+        return bean;
+    }
+
+
+    @Override
+    public void setBeanFactory(BeanFactory beanFactory) throws BeansException {
+        this.beanFactory = beanFactory;
+    }
+
+
+    @Override
+    public void destroy() throws Exception {
+
+        // loop through the prototype beans and call the destroy() method on each one
+
+        synchronized (prototypeBeans) {
+
+            for (Object bean : prototypeBeans) {
+
+                if (bean instanceof DisposableBean) {
+                    DisposableBean disposable = (DisposableBean) bean;
+                    try {
+                        disposable.destroy();
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+
+            prototypeBeans.clear();
+        }
+
+    }
+}
+```
+
+## Java Annotation
+
++ Label/Marker for Java classes
++ Meta-data about the class
++ Process at compile time or run-time for special process
+
+### IoC
+
+1. enable component scale in Spring config file
+2. add annotation like @Component to class
+3. retrive bean from Spring container
+
+file: applicationContent.xml
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+    http://www.springframework.org/schema/beans/spring-beans.xsd
+    http://www.springframework.org/schema/context
+    http://www.springframework.org/schema/context/spring-context.xsd">
+
+    <!--  add component scan  -->
+    <context:component-scan base-package="note.spring.springdemo"/>
+
+</beans>
+```
+
+```java
+@Component("thatSillyCoach")
+public class TennisCoach implements Coach {
+    @Override
+    public String getDailyWorkout() {
+        return "Run 5k";
+    }
+}
+```
+
+```java
+public class AnnotationDemoApp {
+
+    public static void main(String[] argv) {
+        // read spring config
+        ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext("applicationContent.xml");
+
+        // retrieve bean from spring
+        System.out.println("=============================");
+        Coach theCoach = context.getBean("thatSillyCoach", Coach.class);
+        System.out.println(theCoach.getDailyWorkout());
+    }
+}
+```
+
+### Bean name rule
+
++ explicity give name for the bean
++ implicity name rule: use class name but replace first letter to lowercase
+  + If class name is have more then one upper case in class name the bean name will the same: RESTFortuneService (class name) -> RESTFortuneService (bean name)
+
+```java
+@Component("thatSillyCoach")
+public class TennisCoach implements Coach {
+}
+
+// bean name will be codeCoach
+@Component()
+public class CodeCoach implements Coach {
+}
+
+// bean name will be RESTFortuneService
+@Component
+public class RESTFortuneService implements FortuneService {
+}
+
+```
+
+### @Autowired for DI
+
+The dependecy to inejct must also a bean (aka ineject class should also annotated with @Component annotatation)
+
+Constructor Injection
+
+```java
+@Component
+public class TennisCoach implements Coach {
+    private FortuneService theFortuneService;
+
+    // After Spring 4.3 annotation for @Autowired can ignore
+    // if we only have 1 constructor
+    @Autowired
+    public TennisCoach(FortuneService fortuneService) {
+        System.out.println(">> TennisCoach: constructor injection");
+        theFortuneService = fortuneService;
+    }
+}
+```
+
+Setter Injection
+
+```java
+@Component
+public class CodeCoach implements Coach {
+    private FortuneService theFortuneService;
+    @Autowired
+    private void setFortuneService(FortuneService theFortuneService) {
+        System.out.println(">> CodeCoach setter injection to setFortuneService");
+        fortuneService = theFortuneService;
+    }
+}
+```
+
+Filed Injection (done by Java reflection)
+
+```java
+@Component
+public class DanceCoach implements Coach {
+
+    @Autowired
+    private FortuneService fortuneService;
+}
+```
+
+### Property for field value
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+    http://www.springframework.org/schema/beans/spring-beans.xsd
+    http://www.springframework.org/schema/context
+    http://www.springframework.org/schema/context/spring-context.xsd">
+
+    <!--  add component scan  -->
+    <context:component-scan base-package="note.spring.springdemo"/>
+
+    <!--  add property config  -->
+    <context:property-placeholder location="classpath:sport.properties"/>
+
+</beans>
+```
+
+file: sport.properties"
+```
+foo.email=abc@def.com
+foo.team=Class B
+```
+
+```java
+@Component
+public class DanceCoach implements Coach {
+    @Value("${foo.email}")
+    private String email;
+
+    @Value("${foo.team}")
+    private String team;
+}
+```
+
+### @Qualifier to avoid ambiguity
+
+If we have muliple class all implement same interface how does spring how which should inject?
+
+```java
+public interface FortuneService {
+    String getFortune();
+}
+
+@Component
+public class HappyFortuneService implements FortuneService {
+}
+
+@Component
+public class RandomFortuneService implements FortuneService {
+}
+
+@Component
+public class RESTFortuneService implements FortuneService {
+}
+```
+
+**@Qualifier** can solved ambiguity
+
+Constructor Inejection: **@Qualifier** need to put in arguement
+
+```java
+@Component("thatSillyCoach")
+// We don't need to add scope annotation since default is singleton
+public class TennisCoach implements Coach {
+
+    private final FortuneService theFortuneService;
+
+    // After Spring 4.3 annotation for @Autowired can ignore
+    // if we only have 1 constructor
+    @Autowired
+    public TennisCoach(@Qualifier("happyFortuneService") FortuneService fortuneService) {
+        System.out.println(">> TennisCoach: constructor injection");
+        theFortuneService = fortuneService;
+    }
+```
+
+Setter Inject: can just put on method name
+
+```java
+@Component
+@Scope("prototype")
+public class CodeCoach implements Coach, DisposableBean {
+    private FortuneService fortuneService;
+    @Autowired
+    @Qualifier("randomFortuneService")
+    private void setFortuneService(FortuneService theFortuneService) {
+        System.out.println(">> CodeCoach setter injection to setFortuneService");
+        fortuneService = theFortuneService;
+    }
+```
+
+Field Injection: can put on varable name
+
+```java
+@Component
+public class DanceCoach implements Coach {
+
+    @Autowired
+    @Qualifier("RESTFortuneService")
+    private FortuneService fortuneService;
+}
+```
+
+### Bean Scope and Life cycle
+
++ @Scope
++ @PostConstruct
++ @PreDestroy
+
+```java
+@Component("thatSillyCoach")
+// We don't need to add scope annotation since default is singleton
+//@Scope("singleton")
+public class TennisCoach implements Coach {
+    @PostConstruct
+    private void myInit() {
+        System.out.println(">> TennisCoach: PostConstruct called ");
+    }
+
+    @PreDestroy
+    public void myCleanUp() {
+        System.out.println(">> TennisCoach: PreDestroy called ");
+    }
+}
+
+@Component
+@Scope("prototype")
+public class CodeCoach implements Coach, DisposableBean {
+    @PostConstruct
+    private void myInit() {
+        System.out.println(">> CodeCoach: PostConstruct called ");
+    }
+
+    // prototype scope will not call method with PreDestroy annotation
+    //@PreDestroy
+    public void myCleanUp() {
+        System.out.println(">> CodeCoach: PreDestroy called ");
+    }
+
+    @Override
+    public void destroy() throws Exception {
+        myCleanUp();
+    }
+}
+```
