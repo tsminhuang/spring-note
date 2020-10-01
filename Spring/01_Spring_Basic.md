@@ -727,3 +727,68 @@ public class CodeCoach implements Coach, DisposableBean {
     }
 }
 ```
+
+## Java Code Configuration
+
+### @Configuration, @Bean and @PropertySource
+
+***Configuration***
+
+1. create config class with @Configuration annotation
+2. add @ComponentScan to class (optional)
+3. read Spring Java Configuration class
+4. retrive Bean from Spring Container
+
+***Bean***
+
+This is useful to wrap 3rd-party class as @Bean to inject our service.
+
+1. define @Bean to expose method
+2. inject Bean dependencies
+3. read Spring Java configuration class
+4. retriveveBean from Spring Container
+
+
+***PropertySource***
+
+1. create property file
+2. read property file by @PropertySource in Java config class
+3. use @Value annotation to retrive value
+
+```java
+@Configuration
+//@ComponentScan("note.spring.springdemo") optional
+@PropertySource("classpath:sport.properties")
+public class JobConfig {
+
+    @Bean
+    public FortuneService sadFortuneService() {
+        return new SadFortuneService();
+    }
+
+    @Bean
+    public Coach jobCoach() {
+        return new JobCoach(sadFortuneService());
+    }
+}
+
+public class JobJavaConfigDemoApp {
+    public static void main(String[] argv) {
+        // read spring config
+        AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(JobConfig.class);
+
+        // retrieve singleton bean from spring
+        System.out.println("=============================");
+        JobCoach theCoach = context.getBean("jobCoach", JobCoach.class);
+        System.out.println(theCoach.getDailyWorkout());
+        // setter injection for fortune service
+        System.out.println(theCoach.getDailyFortune());
+
+        System.out.println(theCoach.getEmail());
+        System.out.println(theCoach.getTeam());
+
+        // close context
+        context.close();
+    }
+}
+```
